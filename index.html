@@ -100,6 +100,8 @@
   .tarjeta.t-pendientes .valor{color:var(--rojo)}
   .tarjeta.t-registrados{border-left-color:#6366f1}
   .tarjeta.t-registrados .valor{color:#6366f1}
+  .tarjeta.t-sinserial{border-left-color:#64748b}
+  .tarjeta.t-sinserial .valor{color:#64748b}
 
   /* ===== Cuerpo: tabla escuelas + mapa ===== */
   .cuerpo{flex:1;display:flex;min-height:0}
@@ -245,6 +247,10 @@
   <div class="tarjeta t-registrados" id="cardRegistrados" data-f="registrados">
     <div class="valor" id="numRegistrados">–</div>
     <div class="etiqueta">Seriales registrados</div>
+  </div>
+  <div class="tarjeta t-sinserial" id="cardSinSerial" data-f="sin_serial">
+    <div class="valor" id="numSinSerial">–</div>
+    <div class="etiqueta">Escuelas sin serial</div>
   </div>
 </div>
 
@@ -658,7 +664,7 @@ function procesarYPintar(){
 
 /* ================= RENDER ================= */
 function pintarResumen(){
-  let nEsc=0, entregadas=0, pendientes=0, total=0, seriales=0;
+  let nEsc=0, entregadas=0, pendientes=0, total=0, seriales=0, escSinSerial=0;
   for(const esc of escuelas){
     if(!escuelaPasaFiltros(esc)) continue;
     const st = estadoEsc[esc.codigo];
@@ -667,11 +673,13 @@ function pintarResumen(){
     pendientes += st.pendientes;
     total += st.total;
     seriales += st.seriales;
+    if(st.seriales===0) escSinSerial++;
   }
   document.getElementById("numEscuelas").textContent = nEsc.toLocaleString("es-SV");
   document.getElementById("numEntregadas").textContent = entregadas.toLocaleString("es-SV");
   document.getElementById("numPendientes").textContent = pendientes.toLocaleString("es-SV");
   document.getElementById("numRegistrados").textContent = seriales.toLocaleString("es-SV");
+  document.getElementById("numSinSerial").textContent = escSinSerial.toLocaleString("es-SV");
   const pct = total>0 ? Math.round(entregadas/total*100) : 0;
   document.getElementById("avanceRelleno").style.width = pct + "%";
   document.getElementById("avanceTexto").textContent =
@@ -725,6 +733,7 @@ function pintarListaEscuelas(){
     if(filtroTarjeta==="entregadas" && estadoEsc[esc.codigo].entregadas===0) return false;
     if(filtroTarjeta==="pendientes" && estadoEsc[esc.codigo].pendientes===0) return false;
     if(filtroTarjeta==="registrados" && estadoEsc[esc.codigo].seriales===0) return false;
+    if(filtroTarjeta==="sin_serial" && estadoEsc[esc.codigo].seriales>0) return false;
     return true;
   });
   if(lista.length===0){ cont.innerHTML='<div class="vacio">No hay escuelas que coincidan.</div>'; return; }
@@ -794,6 +803,7 @@ function pintarTablaEstudiantes(){
     if(filtroTarjeta==="entregadas" && !est.entregado) return false;
     if(filtroTarjeta==="pendientes" && est.entregado) return false;
     if(filtroTarjeta==="registrados" && !est.serie) return false;
+    if(filtroTarjeta==="sin_serial" && esc && estadoEsc[est.codigo] && estadoEsc[est.codigo].seriales>0) return false;
     if(q && !normalizar(est.nombre).includes(q) && !normalizar(est.escuela).includes(q) && !normalizar(est.nie).includes(q) && !normalizar(est.serie).includes(q)) return false;
     return true;
   });
