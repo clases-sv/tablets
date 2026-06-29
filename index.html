@@ -201,6 +201,10 @@
     <label for="selDistrito">Distrito</label>
     <select id="selDistrito"><option value="TODOS">Todos los distritos</option></select>
   </div>
+  <div class="filtro-grupo">
+    <label for="selFecha">Fecha</label>
+    <select id="selFecha"><option value="TODAS">Todas las fechas</option></select>
+  </div>
   <div class="avance" title="Avance general de entrega">
     <span class="pct" id="avanceTexto">–</span>
     <div class="pista"><div class="relleno" id="avanceRelleno"></div></div>
@@ -273,6 +277,8 @@ let escuelas = [];        // construidas a partir de estudiantes {codigo, nombre
 let estadoEsc = {};       // codigo -> {color, entregadas, pendientes, total}
 let distritosDisponibles = [];
 let distritoSel = "TODOS";
+let fechasDisponibles = [];
+let fechaSel = "TODAS";
 let filtroTarjeta = "todas"; // todas | entregadas | pendientes
 let busquedaEsc = "";
 let busquedaEst = "";
@@ -329,7 +335,7 @@ async function cargarDatos(){
   const filasEsc = await cargarTabla(SHEET_ESCUELAS, parsearEscuelasGviz, parsearEscuelasCSV);
   if(filasEsc){
     infoEscuelas = {};
-    for(const e of filasEsc) infoEscuelas[e.codigo] = {lat:e.lat, lng:e.lng, distrito:e.distrito};
+    for(const e of filasEsc) infoEscuelas[e.codigo] = {lat:e.lat, lng:e.lng, distrito:e.distrito, fecha:e.fecha};
   }
 
   if(estudiantes.length > 0){
@@ -439,16 +445,40 @@ function parsearEstudiantesCSV(texto){
   return out;
 }
 
-/* ---- Parsers Escuelas (coordenadas / distrito) ---- */
+/* ---- Parsers Escuelas (coordenadas / distrito / fecha) ---- */
+// Normaliza una fecha a clave ISO "yyyy-mm-dd" (ordenable). Si no la reconoce, deja el texto tal cual.
+function aFechaClave(v, f){
+  if(typeof v === "string"){
+    const m = v.match(/^Date\((\d+),(\d+),(\d+)/);   // formato gviz: Date(2025,5,12)
+    if(m){
+      const y=+m[1], mo=+m[2]+1, d=+m[3];
+      return `${y}-${String(mo).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    }
+  }
+  const t = String(f ?? v ?? "").trim();
+  if(!t) return "";
+  let m2 = t.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);   // dd/mm/yyyy
+  if(m2){ let d=+m2[1], mo=+m2[2], y=+m2[3]; if(y<100) y+=2000;
+    return `${y}-${String(mo).padStart(2,"0")}-${String(d).padStart(2,"0")}`; }
+  let m3 = t.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);   // yyyy-mm-dd
+  if(m3){ return `${m3[1]}-${String(+m3[2]).padStart(2,"0")}-${String(+m3[3]).padStart(2,"0")}`; }
+  return t;
+}
+// ISO "yyyy-mm-dd" -> "dd/mm/yyyy" para mostrar.
+function fechaBonita(iso){
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : String(iso);
+}
 function idxEsc(cols){
   return {
     codigo: indiceCol(cols, ["codigo","código","codigo ce","codigo sede"], 0),
     distrito: indiceCol(cols, ["distrito"], -1),
     lat: indiceCol(cols, ["latitude","latitud","lat"], -1),
-    lng: indiceCol(cols, ["longitude","longitud","lng","lon"], -1)
+    lng: indiceCol(cols, ["longitude","longitud","lng","lon"], -1),
+    fecha: indiceCol(cols, ["fecha","fecha entrega","fecha de entrega","fecha entregada","fecha de la entrega"], -1)
   };
 }
-function armarEscInfo(codigoV, distritoV, latV, lngV){
+function armarEscInfo(codigoV, distritoV, latV, lngV, fechaV){
   const codigo = String(codigoV ?? "").trim();
   if(!codigo) return null;
   const lat = parseFloat(latV), lng = parseFloat(lngV);
@@ -456,7 +486,8 @@ function armarEscInfo(codigoV, distritoV, latV, lngV){
   return {
     codigo,
     distrito: String(distritoV ?? "").trim(),
-    lat: valida?lat:null, lng: valida?lng:null
+    lat: valida?lat:null, lng: valida?lng:null,
+    fecha: String(fechaV ?? "").trim()
   };
 }
 function parsearEscuelasGviz(json){
@@ -465,7 +496,9 @@ function parsearEscuelasGviz(json){
   const out=[];
   for(const f of (json.table.rows||[])){
     const c=f.c||[]; const v=i=>(i>=0&&c[i])?c[i].v:null;
-    const e = armarEscInfo(v(ix.codigo), v(ix.distrito), v(ix.lat), v(ix.lng));
+    const celF=i=>(i>=0&&c[i])?(c[i].f ?? c[i].v):null;
+    const fechaV = ix.fecha>=0 ? aFechaClave(v(ix.fecha), celF(ix.fecha)) : "";
+    const e = armarEscInfo(v(ix.codigo), v(ix.distrito), v(ix.lat), v(ix.lng), fechaV);
     if(e) out.push(e);
   }
   return out;
@@ -476,7 +509,7 @@ function parsearEscuelasCSV(texto){
   const out=[];
   for(let i=1;i<filas.length;i++){
     const f=filas[i]; const v=j=>(j>=0?f[j]:null);
-    const e = armarEscInfo(v(ix.codigo), v(ix.distrito), v(ix.lat), v(ix.lng));
+    const e = armarEscInfo(v(ix.codigo), v(ix.distrito), v(ix.lat), v(ix.lng), ix.fecha>=0?aFechaClave(null, v(ix.fecha)):"");
     if(e) out.push(e);
   }
   return out;
@@ -514,6 +547,7 @@ function construirEscuelas(){
     return {
       codigo:g.codigo, nombre,
       distrito: info.distrito || "",
+      fecha: info.fecha || "",
       lat: (info.lat ?? null), lng: (info.lng ?? null)
     };
   });
@@ -531,8 +565,21 @@ function actualizarFiltros(){
   sD.parentElement.style.display = distritosDisponibles.length ? "" : "none";
   distritoSel = (ant==="TODOS" || distritosDisponibles.includes(ant)) ? ant : "TODOS";
   sD.value = distritoSel;
+
+  // Fechas (columna nueva de la pestaña Escuelas) — ordenadas cronológicamente
+  fechasDisponibles = [...new Set(escuelas.map(e=>e.fecha).filter(Boolean))].sort();
+  const sF = document.getElementById("selFecha"), antF = fechaSel;
+  sF.innerHTML = '<option value="TODAS">Todas las fechas</option>';
+  for(const f of fechasDisponibles){
+    const o=document.createElement("option"); o.value=f; o.textContent=fechaBonita(f); sF.appendChild(o);
+  }
+  sF.parentElement.style.display = fechasDisponibles.length ? "" : "none";
+  fechaSel = (antF==="TODAS" || fechasDisponibles.includes(antF)) ? antF : "TODAS";
+  sF.value = fechaSel;
 }
 function escuelaPasaDistrito(esc){ return distritoSel==="TODOS" || esc.distrito===distritoSel; }
+function escuelaPasaFecha(esc){ return fechaSel==="TODAS" || esc.fecha===fechaSel; }
+function escuelaPasaFiltros(esc){ return escuelaPasaDistrito(esc) && escuelaPasaFecha(esc); }
 
 /* ================= LÓGICA DE ESTADO ================= */
 function procesarYPintar(){
@@ -560,7 +607,7 @@ function procesarYPintar(){
 function pintarResumen(){
   let nEsc=0, entregadas=0, pendientes=0, total=0;
   for(const esc of escuelas){
-    if(!escuelaPasaDistrito(esc)) continue;
+    if(!escuelaPasaFiltros(esc)) continue;
     const st = estadoEsc[esc.codigo];
     nEsc++;
     entregadas += st.entregadas;
@@ -582,7 +629,7 @@ function pintarMapa(){
   capaMarcadores.clearLayers(); marcadores={};
   const q = normalizar(busquedaEsc);
   for(const esc of escuelas){
-    if(!escuelaPasaDistrito(esc)) continue;
+    if(!escuelaPasaFiltros(esc)) continue;
     if(esc.lat===null||esc.lng===null) continue;
     if(q && !normalizar(esc.nombre).includes(q) && !esc.codigo.includes(q)) continue;
     const st = estadoEsc[esc.codigo];
@@ -615,7 +662,7 @@ function pintarListaEscuelas(){
   const cont = document.getElementById("listaEscuelas");
   const q = normalizar(busquedaEsc);
   let lista = escuelas.filter(esc=>{
-    if(!escuelaPasaDistrito(esc)) return false;
+    if(!escuelaPasaFiltros(esc)) return false;
     if(q && !normalizar(esc.nombre).includes(q) && !esc.codigo.includes(q)) return false;
     if(filtroTarjeta==="entregadas" && estadoEsc[esc.codigo].entregadas===0) return false;
     if(filtroTarjeta==="pendientes" && estadoEsc[esc.codigo].pendientes===0) return false;
@@ -659,7 +706,7 @@ function pintarTablaEstudiantes(){
   for(const esc of escuelas) escPorCodigo[esc.codigo]=esc;
   let lista = estudiantes.filter(est=>{
     const esc = escPorCodigo[est.codigo];
-    if(esc && !escuelaPasaDistrito(esc)) return false;
+    if(esc && !escuelaPasaFiltros(esc)) return false;
     if(filtroTarjeta==="entregadas" && !est.entregado) return false;
     if(filtroTarjeta==="pendientes" && est.entregado) return false;
     if(q && !normalizar(est.nombre).includes(q) && !normalizar(est.escuela).includes(q) && !normalizar(est.nie).includes(q) && !normalizar(est.serie).includes(q)) return false;
@@ -692,6 +739,9 @@ function ocultarAviso(){ document.getElementById("aviso").style.display="none"; 
 document.getElementById("btnActualizar").addEventListener("click", cargarDatos);
 document.getElementById("selDistrito").addEventListener("change", ev=>{
   distritoSel = ev.target.value; yaAjustado=false; procesarYPintar();
+});
+document.getElementById("selFecha").addEventListener("change", ev=>{
+  fechaSel = ev.target.value; yaAjustado=false; procesarYPintar();
 });
 document.getElementById("buscarEsc").addEventListener("input", ev=>{
   busquedaEsc = ev.target.value.trim(); pintarMapa(); pintarListaEscuelas();
