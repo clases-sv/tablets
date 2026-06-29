@@ -212,6 +212,10 @@
     <label for="selFecha">Fecha</label>
     <select id="selFecha"><option value="TODAS">Todas las fechas</option></select>
   </div>
+  <div class="filtro-grupo">
+    <label for="selTurno">Turno</label>
+    <select id="selTurno"><option value="TODOS">Todos los turnos</option></select>
+  </div>
   <button id="btnLimpiar" class="btn-limpiar" type="button">✕ Limpiar filtros</button>
   <div class="avance" title="Avance general de entrega">
     <span class="pct" id="avanceTexto">–</span>
@@ -290,6 +294,8 @@ let estadoEsc = {};       // codigo -> {color, entregadas, pendientes, total}
 let distritosDisponibles = [];
 let distritoSel = "TODOS";
 let fechasDisponibles = [];
+let turnosDisponibles = [];
+let turnoSel = "TODOS";
 let fechaSel = "TODAS";
 let filtroTarjeta = "todas"; // todas | entregadas | pendientes
 let busquedaEsc = "";
@@ -347,7 +353,7 @@ async function cargarDatos(){
   const filasEsc = await cargarTabla(SHEET_ESCUELAS, parsearEscuelasGviz, parsearEscuelasCSV);
   if(filasEsc){
     infoEscuelas = {};
-    for(const e of filasEsc) infoEscuelas[e.codigo] = {lat:e.lat, lng:e.lng, distrito:e.distrito, fecha:e.fecha};
+    for(const e of filasEsc) infoEscuelas[e.codigo] = {lat:e.lat, lng:e.lng, distrito:e.distrito, fecha:e.fecha, turnos:e.turnos, turnoRaw:e.turnoRaw};
   }
 
   if(estudiantes.length > 0){
@@ -487,10 +493,19 @@ function idxEsc(cols){
     distrito: indiceCol(cols, ["distrito"], -1),
     lat: indiceCol(cols, ["latitude","latitud","lat"], -1),
     lng: indiceCol(cols, ["longitude","longitud","lng","lon"], -1),
-    fecha: indiceCol(cols, ["fecha","fecha entrega","fecha de entrega","fecha entregada","fecha de la entrega"], -1)
+    fecha: indiceCol(cols, ["fecha","fecha entrega","fecha de entrega","fecha entregada","fecha de la entrega"], -1),
+    turno: indiceCol(cols, ["turno","jornada"], -1)
   };
 }
-function armarEscInfo(codigoV, distritoV, latV, lngV, fechaV){
+// Clasifica el texto de turno en categorías AM / PM (una escuela puede tener ambas).
+function categoriasTurno(raw){
+  const t = String(raw||"").toUpperCase();
+  const cats = [];
+  if(t.includes("AM")) cats.push("AM");
+  if(t.includes("PM")) cats.push("PM");
+  return cats;
+}
+function armarEscInfo(codigoV, distritoV, latV, lngV, fechaV, turnoV){
   const codigo = String(codigoV ?? "").trim();
   if(!codigo) return null;
   const lat = parseFloat(latV), lng = parseFloat(lngV);
@@ -499,7 +514,9 @@ function armarEscInfo(codigoV, distritoV, latV, lngV, fechaV){
     codigo,
     distrito: String(distritoV ?? "").trim(),
     lat: valida?lat:null, lng: valida?lng:null,
-    fecha: String(fechaV ?? "").trim()
+    fecha: String(fechaV ?? "").trim(),
+    turnoRaw: String(turnoV ?? "").trim(),
+    turnos: categoriasTurno(turnoV)
   };
 }
 function parsearEscuelasGviz(json){
@@ -510,7 +527,8 @@ function parsearEscuelasGviz(json){
     const c=f.c||[]; const v=i=>(i>=0&&c[i])?c[i].v:null;
     const celF=i=>(i>=0&&c[i])?(c[i].f ?? c[i].v):null;
     const fechaV = ix.fecha>=0 ? aFechaClave(v(ix.fecha), celF(ix.fecha)) : "";
-    const e = armarEscInfo(v(ix.codigo), v(ix.distrito), v(ix.lat), v(ix.lng), fechaV);
+    const turnoV = ix.turno>=0 ? celF(ix.turno) : "";
+    const e = armarEscInfo(v(ix.codigo), v(ix.distrito), v(ix.lat), v(ix.lng), fechaV, turnoV);
     if(e) out.push(e);
   }
   return out;
@@ -521,7 +539,7 @@ function parsearEscuelasCSV(texto){
   const out=[];
   for(let i=1;i<filas.length;i++){
     const f=filas[i]; const v=j=>(j>=0?f[j]:null);
-    const e = armarEscInfo(v(ix.codigo), v(ix.distrito), v(ix.lat), v(ix.lng), ix.fecha>=0?aFechaClave(null, v(ix.fecha)):"");
+    const e = armarEscInfo(v(ix.codigo), v(ix.distrito), v(ix.lat), v(ix.lng), ix.fecha>=0?aFechaClave(null, v(ix.fecha)):"", ix.turno>=0?v(ix.turno):"");
     if(e) out.push(e);
   }
   return out;
@@ -560,6 +578,8 @@ function construirEscuelas(){
       codigo:g.codigo, nombre,
       distrito: info.distrito || "",
       fecha: info.fecha || "",
+      turnos: info.turnos || [],
+      turnoRaw: info.turnoRaw || "",
       lat: (info.lat ?? null), lng: (info.lng ?? null)
     };
   });
@@ -588,10 +608,22 @@ function actualizarFiltros(){
   sF.parentElement.style.display = fechasDisponibles.length ? "" : "none";
   fechaSel = (antF==="TODAS" || fechasDisponibles.includes(antF)) ? antF : "TODAS";
   sF.value = fechaSel;
+
+  // Turnos (categorías AM / PM derivadas de la pestaña Escuelas)
+  turnosDisponibles = [...new Set(escuelas.flatMap(e=>e.turnos))].sort();
+  const sT = document.getElementById("selTurno"), antT = turnoSel;
+  sT.innerHTML = '<option value="TODOS">Todos los turnos</option>';
+  for(const t of turnosDisponibles){
+    const o=document.createElement("option"); o.value=t; o.textContent=t; sT.appendChild(o);
+  }
+  sT.parentElement.style.display = turnosDisponibles.length ? "" : "none";
+  turnoSel = (antT==="TODOS" || turnosDisponibles.includes(antT)) ? antT : "TODOS";
+  sT.value = turnoSel;
 }
 function escuelaPasaDistrito(esc){ return distritoSel==="TODOS" || esc.distrito===distritoSel; }
 function escuelaPasaFecha(esc){ return fechaSel==="TODAS" || esc.fecha===fechaSel; }
-function escuelaPasaFiltros(esc){ return escuelaPasaDistrito(esc) && escuelaPasaFecha(esc); }
+function escuelaPasaTurno(esc){ return turnoSel==="TODOS" || (esc.turnos||[]).includes(turnoSel); }
+function escuelaPasaFiltros(esc){ return escuelaPasaDistrito(esc) && escuelaPasaFecha(esc) && escuelaPasaTurno(esc); }
 
 /* ================= LÓGICA DE ESTADO ================= */
 function procesarYPintar(){
@@ -671,7 +703,8 @@ function htmlPopup(esc, st){
     `<div class="popup-meta">Código ${esc.codigo}${esc.distrito?" · "+esc.distrito:""}</div>`+
     `<div class="popup-stat">${estado} · ${pct}%</div>`+
     `<div class="popup-stat">Entregadas: <b style="color:#16a34a">${st.entregadas}</b> · Pendientes: <b style="color:#dc2626">${st.pendientes}</b> · Total: <b>${st.total}</b></div>`+
-    `<div class="popup-stat">Seriales registrados: <b style="color:#6366f1">${st.seriales}</b></div>`;
+    `<div class="popup-stat">Seriales registrados: <b style="color:#6366f1">${st.seriales}</b></div>`+
+    (esc.turnoRaw ? `<div class="popup-stat">Turno: ${esc.turnoRaw}</div>` : "");
 }
 
 function pintarListaEscuelas(){
@@ -761,10 +794,14 @@ document.getElementById("selDistrito").addEventListener("change", ev=>{
 document.getElementById("selFecha").addEventListener("change", ev=>{
   fechaSel = ev.target.value; yaAjustado=false; procesarYPintar();
 });
+document.getElementById("selTurno").addEventListener("change", ev=>{
+  turnoSel = ev.target.value; yaAjustado=false; procesarYPintar();
+});
 document.getElementById("btnLimpiar").addEventListener("click", limpiarFiltros);
 function limpiarFiltros(){
   distritoSel = "TODOS";  document.getElementById("selDistrito").value = "TODOS";
   fechaSel = "TODAS";     document.getElementById("selFecha").value = "TODAS";
+  turnoSel = "TODOS";     document.getElementById("selTurno").value = "TODOS";
   filtroTarjeta = "todas";
   busquedaEsc = ""; document.getElementById("buscarEsc").value = "";
   busquedaEst = ""; document.getElementById("buscarEst").value = "";
