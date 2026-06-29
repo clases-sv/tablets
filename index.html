@@ -68,6 +68,11 @@
     background:#fff;border:1px solid var(--borde);border-radius:6px;
     padding:7px 10px;font-size:13px;cursor:pointer;color:var(--texto);
   }
+  .btn-limpiar{
+    background:#fff;border:1px solid var(--borde);border-radius:6px;
+    padding:7px 12px;font-size:12.5px;font-weight:600;color:var(--texto-suave);cursor:pointer;
+  }
+  .btn-limpiar:hover{background:#eef1f5;color:var(--texto)}
   /* Barra de avance general */
   .avance{margin-left:auto;display:flex;align-items:center;gap:10px;min-width:240px}
   .avance .pista{flex:1;height:10px;background:var(--gris-suave);border-radius:6px;overflow:hidden;min-width:120px}
@@ -207,6 +212,7 @@
     <label for="selFecha">Fecha</label>
     <select id="selFecha"><option value="TODAS">Todas las fechas</option></select>
   </div>
+  <button id="btnLimpiar" class="btn-limpiar" type="button">✕ Limpiar filtros</button>
   <div class="avance" title="Avance general de entrega">
     <span class="pct" id="avanceTexto">–</span>
     <div class="pista"><div class="relleno" id="avanceRelleno"></div></div>
@@ -755,6 +761,18 @@ document.getElementById("selDistrito").addEventListener("change", ev=>{
 document.getElementById("selFecha").addEventListener("change", ev=>{
   fechaSel = ev.target.value; yaAjustado=false; procesarYPintar();
 });
+document.getElementById("btnLimpiar").addEventListener("click", limpiarFiltros);
+function limpiarFiltros(){
+  distritoSel = "TODOS";  document.getElementById("selDistrito").value = "TODOS";
+  fechaSel = "TODAS";     document.getElementById("selFecha").value = "TODAS";
+  filtroTarjeta = "todas";
+  busquedaEsc = ""; document.getElementById("buscarEsc").value = "";
+  busquedaEst = ""; document.getElementById("buscarEst").value = "";
+  document.querySelectorAll(".tarjeta").forEach(c=>c.classList.remove("activa"));
+  document.getElementById("cardEscuelas").classList.add("activa");
+  yaAjustado = false;
+  procesarYPintar();
+}
 document.getElementById("buscarEsc").addEventListener("input", ev=>{
   busquedaEsc = ev.target.value.trim(); pintarMapa(); pintarListaEscuelas();
 });
